@@ -1,0 +1,42 @@
+---
+- name: Update DNF package cache
+  ansible.builtin.dnf:
+    update_cache: true
+
+- name: Install Docker
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Enable and start Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Add ec2-user to docker group
+  ansible.builtin.user:
+    name: ec2-user
+    groups: docker
+    append: true
+
+- name: Verify Docker installation
+  ansible.builtin.command:
+    cmd: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Display Docker version
+  ansible.builtin.debug:
+    msg: "{{ docker_version.stdout }}"
+
+- name: Check whether Docker Compose is installed
+  ansible.builtin.command:
+    cmd: docker compose version
+  register: compose_check
+  changed_when: false
+  failed_when: false
+
+- name: Display Docker Compose status
+  ansible.builtin.debug:
+    msg: "{{ compose_check.stdout | default('Docker Compose plugin not yet available') }}"

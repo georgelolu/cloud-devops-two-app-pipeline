@@ -1,0 +1,172 @@
+---
+# ============================================================
+# Deploy Role
+# Deploys the Portfolio and Java/Tomcat applications
+# using Docker Compose.
+# ============================================================
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: /opt/cloud-devops
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+
+# ------------------------------------------------------------
+# Copy Docker Compose configuration
+# ------------------------------------------------------------
+
+- name: Copy Docker Compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../docker-compose.yml"
+    dest: /opt/cloud-devops/docker-compose.yml
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+
+# ------------------------------------------------------------
+# Create Nginx configuration directory
+# ------------------------------------------------------------
+
+- name: Create Nginx configuration directory
+  ansible.builtin.file:
+    path: /opt/cloud-devops/nginx
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+
+# ------------------------------------------------------------
+# Copy Nginx configuration if it exists
+# ------------------------------------------------------------
+
+- name: Check whether Nginx configuration exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../nginx/nginx.conf"
+  register: nginx_config
+
+- name: Copy Nginx configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../nginx/nginx.conf"
+    dest: /opt/cloud-devops/nginx/nginx.conf
+    owner: ec2-user
+    group: ec2-user
+    mode: "0644"
+  when: nginx_config.stat.exists
+
+# ------------------------------------------------------------
+# Check Docker
+# ------------------------------------------------------------
+
+- name: Verify Docker service is running
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+# ------------------------------------------------------------
+# Check Docker Compose
+# ------------------------------------------------------------
+
+- name: Verify Docker Compose is available
+  ansible.builtin.command:
+    cmd: docker compose version
+  register: docker_compose_version
+  changed_when: false
+
+- name: Display Docker Compose version
+  ansible.builtin.debug:
+    msg: "{{ docker_compose_version.stdout }}"
+
+# ------------------------------------------------------------
+# Stop existing application containers
+# ------------------------------------------------------------
+
+- name: Stop existing Docker Compose applications
+  ansible.builtin.command:
+    cmd: docker compose down
+    chdir: /opt/cloud-devops
+  register: compose_down
+  changed_when: false
+  failed_when: false
+
+# ------------------------------------------------------------
+# Start applications
+# ------------------------------------------------------------
+
+- name: Start Portfolio, Java and Reverse Proxy containers
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: /opt/cloud-devops
+  register: compose_up
+  changed_when: true
+
+# ------------------------------------------------------------
+# Wait for containers to start
+# ------------------------------------------------------------
+
+- name: Wait for applications to start
+  ansible.builtin.pause:
+    seconds: 15
+
+# ------------------------------------------------------------
+# Display container status
+# ------------------------------------------------------------
+
+- name: Check Docker Compose container status
+  ansible.builtin.command:
+    cmd: docker compose ps
+    chdir: /opt/cloud-devops
+  register: compose_status
+  changed_when: false
+
+- name: Display Docker Compose status
+  ansible.builtin.debug:
+    var: compose_status.stdout_lines
+
+# ------------------------------------------------------------
+# Verify Portfolio application
+# ------------------------------------------------------------
+
+- name: Verify Portfolio application
+  ansible.builtin.uri:
+    url: http://127.0.0.1/
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: portfolio_check
+  retries: 5
+  delay: 5
+  until: portfolio_check.status == 200
+
+# ------------------------------------------------------------
+# Verify Java/Tomcat application
+# ------------------------------------------------------------
+
+- name: Verify Java/Tomcat application
+  ansible.builtin.uri:
+    url: http://127.0.0.1/java/
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: java_check
+  retries: 5
+  delay: 5
+  until: java_check.status == 200
+
+# ------------------------------------------------------------
+# Deployment summary
+# ------------------------------------------------------------
+
+- name: Display deployment result
+  ansible.builtin.debug:
+    msg:
+      - "=============================================="
+      - "Deployment completed successfully"
+      - "=============================================="
+      - "Portfolio: http://{{ ansible_host }}/"
+      - "Java/Tomcat: http://{{ ansible_host }}/java/"
+      - "Portfolio HTTP status: {{ portfolio_check.status }}"
+      - "Java HTTP status: {{ java_check.status }}"
+      - "=============================================="

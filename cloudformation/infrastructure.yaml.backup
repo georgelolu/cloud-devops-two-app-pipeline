@@ -1,0 +1,431 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Cloud DevOps Two Application Pipeline Infrastructure.
+  Creates a VPC, public subnets, Internet Gateway, route table,
+  security groups, EC2 instance, Application Load Balancer,
+  target group and listener.
+
+Parameters:
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 Key Pair used for SSH access.
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type.
+
+  SSHLocation:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >
+      CIDR range allowed to SSH into the EC2 instance.
+      For better security, replace 0.0.0.0/0 with your public IP/32.
+
+Mappings:
+
+  RegionMap:
+
+    us-east-1:
+      AMI: ami-0c02fb55956c7d316
+
+    us-east-2:
+      AMI: ami-0ea3c35c5c3284d82
+
+    us-west-1:
+      AMI: ami-0d53d8c5e4c5f4a3b
+
+    us-west-2:
+      AMI: ami-05f991c49d264708f
+
+    eu-west-1:
+      AMI: ami-01dd271720c1ba44f
+
+    eu-west-2:
+      AMI: ami-0e8d228ad90af6732
+
+    eu-central-1:
+      AMI: ami-0faab6bdbac9486fb
+
+Resources:
+
+  # ------------------------------------------------
+  # VPC
+  # ------------------------------------------------
+
+  DevOpsVPC:
+    Type: AWS::EC2::VPC
+
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+      Tags:
+        - Key: Name
+          Value: DevOps-VPC
+
+
+  # ------------------------------------------------
+  # Internet Gateway
+  # ------------------------------------------------
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+    Properties:
+      Tags:
+        - Key: Name
+          Value: DevOps-InternetGateway
+
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+
+    Properties:
+      VpcId: !Ref DevOpsVPC
+      InternetGatewayId: !Ref InternetGateway
+
+
+  # ------------------------------------------------
+  # Public Subnet 1
+  # ------------------------------------------------
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+
+    Properties:
+      VpcId: !Ref DevOpsVPC
+      CidrBlock: 10.0.1.0/24
+
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: !Ref AWS::Region
+
+      MapPublicIpOnLaunch: true
+
+      Tags:
+        - Key: Name
+          Value: DevOps-PublicSubnet-1
+
+
+  # ------------------------------------------------
+  # Public Subnet 2
+  # ------------------------------------------------
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+
+    Properties:
+      VpcId: !Ref DevOpsVPC
+      CidrBlock: 10.0.2.0/24
+
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: !Ref AWS::Region
+
+      MapPublicIpOnLaunch: true
+
+      Tags:
+        - Key: Name
+          Value: DevOps-PublicSubnet-2
+
+
+  # ------------------------------------------------
+  # Route Table
+  # ------------------------------------------------
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+
+    Properties:
+
+      VpcId: !Ref DevOpsVPC
+
+      Tags:
+        - Key: Name
+          Value: DevOps-PublicRouteTable
+
+
+  # ------------------------------------------------
+  # Internet Route
+  # ------------------------------------------------
+
+  DefaultInternetRoute:
+    Type: AWS::EC2::Route
+
+    DependsOn:
+      - AttachGateway
+
+    Properties:
+
+      RouteTableId: !Ref PublicRouteTable
+
+      DestinationCidrBlock: 0.0.0.0/0
+
+      GatewayId: !Ref InternetGateway
+
+
+  # ------------------------------------------------
+  # Route Table Associations
+  # ------------------------------------------------
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+
+    Properties:
+
+      RouteTableId: !Ref PublicRouteTable
+
+      SubnetId: !Ref PublicSubnet1
+
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+
+    Properties:
+
+      RouteTableId: !Ref PublicRouteTable
+
+      SubnetId: !Ref PublicSubnet2
+
+
+  # ------------------------------------------------
+  # ALB Security Group
+  # ------------------------------------------------
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+
+    Properties:
+
+      GroupDescription: Allow HTTP traffic to Application Load Balancer
+
+      VpcId: !Ref DevOpsVPC
+
+      SecurityGroupIngress:
+
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+      SecurityGroupEgress:
+
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: DevOps-ALB-SG
+
+
+  # ------------------------------------------------
+  # EC2 Security Group
+  # ------------------------------------------------
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+
+    Properties:
+
+      GroupDescription: Security group for DevOps EC2 server
+
+      VpcId: !Ref DevOpsVPC
+
+      SecurityGroupIngress:
+
+        # SSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+
+        # HTTP from ALB
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !GetAtt
+            - LoadBalancerSecurityGroup
+            - GroupId
+
+      SecurityGroupEgress:
+
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: DevOps-EC2-SG
+
+
+  # ------------------------------------------------
+  # EC2 Instance
+  # ------------------------------------------------
+
+  DevOpsEC2:
+    Type: AWS::EC2::Instance
+
+    Properties:
+
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+
+      InstanceType: !Ref InstanceType
+
+      KeyName: !Ref KeyName
+
+      SubnetId: !Ref PublicSubnet1
+
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: DevOps-Docker-Server
+
+
+  # ------------------------------------------------
+  # Application Load Balancer
+  # ------------------------------------------------
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+
+    Properties:
+
+      Name: devops-two-app-alb
+
+      Scheme: internet-facing
+
+      Type: application
+
+      IpAddressType: ipv4
+
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+      Tags:
+        - Key: Name
+          Value: DevOps-Application-LoadBalancer
+
+
+  # ------------------------------------------------
+  # Target Group
+  # ------------------------------------------------
+
+  ApplicationTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+
+    Properties:
+
+      VpcId: !Ref DevOpsVPC
+
+      Port: 80
+
+      Protocol: HTTP
+
+      TargetType: instance
+
+      Targets:
+
+        - Id: !Ref DevOpsEC2
+
+          Port: 80
+
+      HealthCheckEnabled: true
+
+      HealthCheckProtocol: HTTP
+
+      HealthCheckPort: '80'
+
+      HealthCheckPath: /
+
+      HealthCheckIntervalSeconds: 30
+
+      HealthCheckTimeoutSeconds: 5
+
+      HealthyThresholdCount: 2
+
+      UnhealthyThresholdCount: 3
+
+      Matcher:
+        HttpCode: '200-399'
+
+      Tags:
+        - Key: Name
+          Value: DevOps-TargetGroup
+
+
+  # ------------------------------------------------
+  # ALB Listener
+  # ------------------------------------------------
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+
+    Properties:
+
+      LoadBalancerArn:
+        !Ref ApplicationLoadBalancer
+
+      Port: 80
+
+      Protocol: HTTP
+
+      DefaultActions:
+
+        - Type: forward
+
+          TargetGroupArn:
+            !Ref ApplicationTargetGroup
+
+
+Outputs:
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref DevOpsVPC
+
+
+  PublicSubnet1Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet1
+
+
+  PublicSubnet2Id:
+    Description: Public Subnet 2 ID
+    Value: !Ref PublicSubnet2
+
+
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref DevOpsEC2
+
+
+  EC2PublicIP:
+    Description: EC2 Public IP
+    Value:
+      !GetAtt DevOpsEC2.PublicIp
+
+
+  LoadBalancerDNS:
+    Description: Application Load Balancer DNS name
+    Value:
+      !GetAtt ApplicationLoadBalancer.DNSName
+
+
+  ApplicationURL:
+    Description: Application URL
+    Value:
+      !Sub
+        - http://${DNSName}
+        - DNSName:
+            !GetAtt ApplicationLoadBalancer.DNSName
