@@ -1,0 +1,62 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+
+  portfolio:
+    name: Portfolio CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Portfolio files
+        run: |
+          test -f portfolio/index.html
+          test -f portfolio/Dockerfile
+
+      - name: Build Portfolio Docker image
+        run: |
+          docker build \
+            -t cloud-devops-portfolio:test \
+            ./portfolio
+
+  java:
+    name: Java CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build Java application
+        working-directory: java-app
+        run: |
+          mvn clean package -DskipTests
+
+      - name: Verify WAR file
+        working-directory: java-app
+        run: |
+          ls -lh target/
+          test -n "$(find target -name '*.war' -print -quit)"
+
+      - name: Build Java Docker image
+        run: |
+          docker build \
+            -t cloud-devops-java:test \
+            ./java-app
