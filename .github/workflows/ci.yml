@@ -103,3 +103,51 @@ jobs:
         run: |
           docker push \
             ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest
+  deploy:
+    name: Deploy to EC2
+    needs:
+      - portfolio
+      - java
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "======================================"
+            echo "Starting EC2 deployment"
+            echo "======================================"
+
+            cd /opt/cloud-devops
+
+            echo "Pulling latest GHCR images..."
+            docker compose pull
+
+            echo "Restarting application..."
+            docker compose up -d
+
+            echo "Waiting for containers..."
+            sleep 15
+
+            echo "Checking containers..."
+            docker compose ps
+
+            echo "Testing Portfolio..."
+            curl -f http://localhost/
+
+            echo "Testing Java application..."
+            curl -f http://localhost/java/
+
+            echo "======================================"
+            echo "Deployment successful"
+            echo "======================================"
