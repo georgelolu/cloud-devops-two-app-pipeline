@@ -1,20 +1,26 @@
-name: CI Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
 
   portfolio:
-    name: Portfolio CI
+    name: Portfolio CI/CD
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -23,17 +29,31 @@ jobs:
           test -f portfolio/index.html
           test -f portfolio/Dockerfile
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Portfolio Docker image
         run: |
           docker build \
-            -t cloud-devops-portfolio:test \
+            -t ghcr.io/${{ github.repository_owner }}/cloud-devops-portfolio:latest \
             ./portfolio
 
+      - name: Push Portfolio Docker image
+        run: |
+          docker push \
+            ghcr.io/${{ github.repository_owner }}/cloud-devops-portfolio:latest
+
+
   java:
-    name: Java CI
+    name: Java CI/CD
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -55,8 +75,20 @@ jobs:
           ls -lh target/
           test -n "$(find target -name '*.war' -print -quit)"
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Java Docker image
         run: |
           docker build \
-            -t cloud-devops-java:test \
+            -t ghcr.io/${{ github.repository_owner }}/cloud-devops-java:latest \
             ./java-app
+
+      - name: Push Java Docker image
+        run: |
+          docker push \
+            ghcr.io/${{ github.repository_owner }}/cloud-devops-java:latest
