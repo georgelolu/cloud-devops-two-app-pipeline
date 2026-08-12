@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   pull_request:
     branches:
       - main
@@ -20,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -28,6 +26,13 @@ jobs:
         run: |
           test -f portfolio/index.html
           test -f portfolio/Dockerfile
+          echo "Portfolio files validated successfully"
+
+      - name: Set lowercase image owner
+        run: |
+          OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
+          echo "Using image owner: $OWNER_LOWER"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -39,13 +44,13 @@ jobs:
       - name: Build Portfolio Docker image
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository_owner }}/cloud-devops-portfolio:latest \
+            -t ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest \
             ./portfolio
 
       - name: Push Portfolio Docker image
         run: |
           docker push \
-            ghcr.io/${{ github.repository_owner }}/cloud-devops-portfolio:latest
+            ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
 
 
   java:
@@ -53,7 +58,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -74,6 +78,13 @@ jobs:
         run: |
           ls -lh target/
           test -n "$(find target -name '*.war' -print -quit)"
+          echo "WAR file verified successfully"
+
+      - name: Set lowercase image owner
+        run: |
+          OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
+          echo "Using image owner: $OWNER_LOWER"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -85,10 +96,10 @@ jobs:
       - name: Build Java Docker image
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository_owner }}/cloud-devops-java:latest \
+            -t ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest \
             ./java-app
 
       - name: Push Java Docker image
         run: |
           docker push \
-            ghcr.io/${{ github.repository_owner }}/cloud-devops-java:latest
+            ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest
