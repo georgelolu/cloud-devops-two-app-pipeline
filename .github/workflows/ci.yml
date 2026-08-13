@@ -1,16 +1,26 @@
+```yaml
 name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
 
+# Required permissions for:
+# - Checking out the repository
+# - Publishing Docker images to GitHub Container Registry
 permissions:
   contents: read
   packages: write
+
+
+# ============================================================
+# PORTFOLIO CI/CD
+# ============================================================
 
 jobs:
 
@@ -19,21 +29,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------------
+      # 1. Checkout repository
+      # --------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # --------------------------------------------------------
+      # 2. Validate Portfolio files
+      # --------------------------------------------------------
       - name: Validate Portfolio files
         run: |
+          echo "Checking Portfolio application files..."
+
           test -f portfolio/index.html
           test -f portfolio/Dockerfile
-          echo "Portfolio files validated successfully"
 
+          echo "Portfolio files validated successfully."
+
+
+      # --------------------------------------------------------
+      # 3. Set lowercase GHCR owner
+      # --------------------------------------------------------
+      # Docker/OCI image repository names must be lowercase.
+      # This guarantees that the GitHub username/repository owner
+      # is converted to lowercase before creating the image tag.
+      # --------------------------------------------------------
       - name: Set lowercase image owner
         run: |
           OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
-          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
-          echo "Using image owner: $OWNER_LOWER"
 
+          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
+
+          echo "Using GHCR image owner: $OWNER_LOWER"
+
+
+      # --------------------------------------------------------
+      # 4. Login to GitHub Container Registry
+      # --------------------------------------------------------
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -41,23 +76,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+
+      # --------------------------------------------------------
+      # 5. Build Portfolio Docker image
+      # --------------------------------------------------------
+      # IMPORTANT:
+      # The Portfolio Dockerfile is located inside:
+      #
+      # portfolio/Dockerfile
+      #
+      # Therefore the Docker build context must be ./portfolio
+      # and NOT .
+      # --------------------------------------------------------
       - name: Build Portfolio Docker image
         run: |
-          docker build . -t ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
+          docker build \
+            -t ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest \
+            ./portfolio
 
+
+      # --------------------------------------------------------
+      # 6. Push Portfolio image to GHCR
+      # --------------------------------------------------------
       - name: Push Portfolio Docker image
         run: |
-          docker push ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
+          docker push \
+            ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
 
+
+# ============================================================
+# JAVA APPLICATION CI/CD
+# ============================================================
 
   java:
     name: Java CI/CD
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------------
+      # 1. Checkout repository
+      # --------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # --------------------------------------------------------
+      # 2. Set up Java 17
+      # --------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -65,24 +131,68 @@ jobs:
           java-version: '17'
           cache: maven
 
+
+      # --------------------------------------------------------
+      # 3. Verify Java project files
+      # --------------------------------------------------------
+      - name: Validate Java application
+        working-directory: java-app
+        run: |
+          echo "Checking Java application files..."
+
+          test -f pom.xml
+          test -f Dockerfile
+
+          echo "Java application files validated successfully."
+
+
+      # --------------------------------------------------------
+      # 4. Build Java application with Maven
+      # --------------------------------------------------------
       - name: Build Java application
         working-directory: java-app
         run: |
           mvn clean package -DskipTests
 
+
+      # --------------------------------------------------------
+      # 5. Verify WAR file
+      # --------------------------------------------------------
       - name: Verify WAR file
         working-directory: java-app
         run: |
-          ls -lh target/
-          test -n "$(find target -name '*.war' -print -quit)"
-          echo "WAR file verified successfully"
+          echo "Checking generated WAR file..."
 
+          ls -lh target/
+
+          WAR_FILE=$(find target -name '*.war' -print -quit)
+
+          if [ -z "$WAR_FILE" ]; then
+            echo "ERROR: WAR file was not generated."
+            exit 1
+          fi
+
+          echo "WAR file found:"
+          echo "$WAR_FILE"
+
+          echo "WAR file verified successfully."
+
+
+      # --------------------------------------------------------
+      # 6. Set lowercase GHCR owner
+      # --------------------------------------------------------
       - name: Set lowercase image owner
         run: |
           OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
-          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
-          echo "Using image owner: $OWNER_LOWER"
 
+          echo "OWNER_LOWER=$OWNER_LOWER" >> "$GITHUB_ENV"
+
+          echo "Using GHCR image owner: $OWNER_LOWER"
+
+
+      # --------------------------------------------------------
+      # 7. Login to GitHub Container Registry
+      # --------------------------------------------------------
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -90,62 +200,172 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+
+      # --------------------------------------------------------
+      # 8. Build Java Docker image
+      # --------------------------------------------------------
+      # The Java Dockerfile is located inside:
+      #
+      # java-app/Dockerfile
+      #
+      # Therefore the Docker build context is ./java-app
+      # --------------------------------------------------------
       - name: Build Java Docker image
         run: |
           docker build \
             -t ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest \
             ./java-app
 
+
+      # --------------------------------------------------------
+      # 9. Push Java Docker image to GHCR
+      # --------------------------------------------------------
       - name: Push Java Docker image
         run: |
           docker push \
             ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest
 
+
+# ============================================================
+# DEPLOY TO AWS EC2
+# ============================================================
+
   deploy:
     name: Deploy to EC2
+
+    # Deployment must wait for BOTH applications.
     needs:
       - portfolio
       - java
 
+    # Deploy ONLY after a push to main.
+    #
+    # Pull requests will run the Portfolio and Java CI jobs,
+    # but they will NOT deploy to EC2.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------------
+      # 1. Deploy to EC2 using SSH
+      # --------------------------------------------------------
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
+
+            # --------------------------------------------------
+            # Stop immediately if a command fails.
+            # --------------------------------------------------
             set -e
+
 
             echo "======================================"
             echo "Starting EC2 deployment"
             echo "======================================"
 
+
+            # --------------------------------------------------
+            # Move to application deployment directory
+            # --------------------------------------------------
             cd /opt/cloud-devops
 
-            echo "Pulling latest GHCR images..."
+
+            echo "Current deployment directory:"
+            pwd
+
+
+            echo "======================================"
+            echo "Pulling latest Docker images..."
+            echo "======================================"
+
+
+            # --------------------------------------------------
+            # Pull the latest Portfolio and Java images
+            # using Docker Compose.
+            # --------------------------------------------------
             docker compose pull
 
-            echo "Restarting application..."
+
+            echo "======================================"
+            echo "Restarting application containers..."
+            echo "======================================"
+
+
+            # --------------------------------------------------
+            # Start/recreate containers using latest images.
+            # --------------------------------------------------
             docker compose up -d
 
+
+            echo "======================================"
             echo "Waiting for containers..."
+            echo "======================================"
+
+
             sleep 15
 
-            echo "Checking containers..."
+
+            echo "======================================"
+            echo "Container status"
+            echo "======================================"
+
+
             docker compose ps
 
-            echo "Testing Portfolio..."
+
+            echo "======================================"
+            echo "Testing Portfolio application..."
+            echo "======================================"
+
+
+            # --------------------------------------------------
+            # Portfolio should be accessible through port 80.
+            # --------------------------------------------------
             curl -f http://localhost/
 
+
+            echo "Portfolio health check passed."
+
+
+            echo "======================================"
             echo "Testing Java application..."
+            echo "======================================"
+
+
+            # --------------------------------------------------
+            # Java application should be accessible through:
+            #
+            # http://localhost/java/
+            # --------------------------------------------------
             curl -f http://localhost/java/
+
+
+            echo "Java application health check passed."
+
+
+            echo "======================================"
+            echo "Cleaning unused Docker resources..."
+            echo "======================================"
+
+
+            # --------------------------------------------------
+            # Remove dangling/unused images.
+            #
+            # This helps prevent the EC2 server disk from filling
+            # up after many deployments.
+            # --------------------------------------------------
+            docker image prune -f
+
 
             echo "======================================"
             echo "Deployment successful"
             echo "======================================"
+```
 
