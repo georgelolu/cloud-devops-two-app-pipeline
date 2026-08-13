@@ -1,4 +1,4 @@
-```yaml
+
 name: CI/CD Pipeline
 
 on:
@@ -367,5 +367,4 @@ jobs:
             echo "======================================"
             echo "Deployment successful"
             echo "======================================"
-```
 
