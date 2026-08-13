@@ -1,8 +1,7 @@
 services:
 
   portfolio:
-    build:
-      context: ./portfolio
+    image: ghcr.io/georgelolu/cloud-devops-portfolio:latest
     container_name: portfolio-app
     restart: unless-stopped
     expose:
@@ -11,8 +10,7 @@ services:
       - app-network
 
   java:
-    build:
-      context: ./java-app
+    image: ghcr.io/georgelolu/cloud-devops-java:latest
     container_name: java-app
     restart: unless-stopped
     expose:
