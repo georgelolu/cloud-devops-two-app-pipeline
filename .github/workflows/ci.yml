@@ -43,14 +43,11 @@ jobs:
 
       - name: Build Portfolio Docker image
         run: |
-          docker build \
-            -t ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest \
-            ./portfolio
+          docker build . -t ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
 
       - name: Push Portfolio Docker image
         run: |
-          docker push \
-            ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
+          docker push ghcr.io/${OWNER_LOWER}/cloud-devops-portfolio:latest
 
 
   java:
@@ -103,6 +100,7 @@ jobs:
         run: |
           docker push \
             ghcr.io/${OWNER_LOWER}/cloud-devops-java:latest
+
   deploy:
     name: Deploy to EC2
     needs:
@@ -114,7 +112,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -151,3 +148,4 @@ jobs:
             echo "======================================"
             echo "Deployment successful"
             echo "======================================"
+
